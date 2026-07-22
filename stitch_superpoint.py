@@ -259,7 +259,7 @@ def stitch_images_superpoint(images_cv2: list,
         )
 
         if src_pts is None or n_matches < 10:
-            print(f"  ❌ Not enough matches ({n_matches}). Cannot stitch image {i+1}.")
+            print(f"   Not enough matches ({n_matches}). Cannot stitch image {i+1}.")
             return False, None
 
         # Compute homography
@@ -267,7 +267,7 @@ def stitch_images_superpoint(images_cv2: list,
         H = compute_homography_from_pts(src_pts, dst_pts)
 
         if H is None:
-            print(f"  ❌ Homography failed for image {i+1}.")
+            print(f"   Homography failed for image {i+1}.")
             return False, None
 
         # Warp and blend
@@ -299,10 +299,10 @@ def stitch_store(store_dir: str, output_dir: str,
         os.makedirs(output_dir, exist_ok=True)
         out_path = os.path.join(output_dir, f"{store_name}_superpoint_panorama.jpg")
         cv2.imwrite(out_path, panorama, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        print(f"\n✅ Saved: {out_path}")
+        print(f"\n Saved: {out_path}")
         print(f"   Size: {panorama.shape[1]}x{panorama.shape[0]} px")
     else:
-        print(f"\n❌ Stitching failed for {store_name}")
+        print(f"\n Stitching failed for {store_name}")
 
 
 # ─────────────────────────────────────────────
