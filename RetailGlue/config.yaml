@@ -1,0 +1,106 @@
+stitching:
+  model_name: lightglue_dinov3_vits
+  device: cpu
+  max_allowed_rotation_angle: 50
+  min_matching_threshold: 20
+  y_distribution_num_bins: 3
+  y_distribution_min_points_per_bin: 5
+  y_distribution_min_bins: 2
+  verbose: false
+  blending: false
+  straightening: true
+  use_progressive_ransac: true
+  mask_warp_max_dim: 2048
+  final_image_max_dim: 4096
+  iou_threshold: 0.02
+  horizontal_overlap_threshold: 0.02
+  vertical_separation_threshold: 0.60
+  unique_frac_threshold: 0.2
+  lightglue_weights:
+    lightglue_dinov3_vits: weights/lightglue/lightglue_dinov3_vits.pth
+    lightglue_dinov3_vitb: weights/lightglue/lightglue_dinov3_vitb.pth
+    lightglue_dinov3_vitl: weights/lightglue/lightglue_dinov3_vitl.pth
+    lightglue_dinov2_vits: weights/lightglue/lightglue_dinov2_vits.pth
+  lightglue_ransac_threshold: 10.0
+  lightglue_min_matches: 5
+  lightglue_min_matching_threshold: 4
+  lightglue_model:
+    input_dim: 384
+    descriptor_dim: 256
+    n_layers: 9
+    num_heads: 4
+    flash: false
+    filter_threshold: 0.1
+    depth_confidence: -1
+    width_confidence: -1
+  gluestick_max_keypoints: 1000
+  gluestick_max_lines: 300
+  gluestick_ransac_threshold: 5.0
+  gluestick_max_edge: 1024
+  lightgluestick_max_keypoints: 2048
+  lightgluestick_max_lines: 250
+  lightgluestick_ransac_threshold: 5.0
+  lightgluestick_max_edge: 1024
+  roma_num_samples: 5000
+  roma_setting: fast
+  roma_ransac_threshold: 5.0
+
+embeddings:
+  crop_margin: 10
+  variant: lightglue_dinov3_vits
+  dino_weights:
+    lightglue_dinov3_vits: weights/dino/dinov3_vits16_pretrain.pth
+    lightglue_dinov3_vitb: weights/dino/dinov3_vitb16_pretrain.pth
+    lightglue_dinov3_vitl: weights/dino/dinov3_vitl16_pretrain.pth
+    lightglue_dinov2_vits: weights/dino/dinov2_vits14_pretrain.pth
+
+detector:
+  sku_yolo_weights: weights/sku_yolo/best_sku110k.pt
+  confidence: 0.25
+
+benchmark:
+  data_root: data/benchmark
+  matching_threshold: 0.4
+
+# ── LightGlue Training ────────────────────────────────────────────────────────
+training:
+  data:
+    data_dir: data/lightglue/lightglue_dinov3_vits  # Directory with images/, annotations/, matches.json
+    embedding_dim: 384                     # Must match model.input_dim
+    max_products: 400                      # Max products per view (padded)
+    train_ratio: 0.7
+    val_ratio: 0.2
+    shuffle_seed: 42
+
+  model:
+    input_dim: 384                         # DINOv3 ViT-S: 384, ViT-B: 768, ViT-L: 1024
+    descriptor_dim: 256
+    n_layers: 9
+    num_heads: 4
+    flash: false
+    checkpointed: true
+    filter_threshold: 0.25
+    pretrained_weights: null               # Path to fine-tune from (optional)
+    loss:
+      gamma: 1.0                           # Multi-layer loss decay
+      nll_balancing: 0.5                   # Positive/negative loss balance
+
+  train:
+    seed: 42
+    epochs: 15
+    batch_size: 8
+    num_workers: 4
+    optimizer: adam
+    lr: 1.0e-4
+    lr_schedule:
+      type: exp                            # exp, step, or null
+      on_epoch: true
+      exp_div_10: 10                       # Decay by 10x over 10 epochs
+    eval_every_iter: 50
+    log_every_iter: 50
+    clip_grad: null
+    best_key: loss/total
+    keep_last_checkpoints: 10
+    mixed_precision: null                  # float16 or bfloat16
+    output_dir: outputs/lightglue
+    experiment_name: lightglue
