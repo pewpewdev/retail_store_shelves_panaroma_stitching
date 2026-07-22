@@ -271,10 +271,10 @@ def stitch_store(store_dir: str, output_dir: str, store_name: str):
         panorama = crop_black_borders(panorama)
         os.makedirs(output_dir, exist_ok=True)
         cv2.imwrite(output_path, panorama, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        print(f"\n✅ Panorama saved: {output_path}")
+        print(f"\n Panorama saved: {output_path}")
         print(f"   Final size: {panorama.shape[1]}x{panorama.shape[0]} px")
     else:
-        print(f"\n❌ All stitching methods failed for {store_name}")
+        print(f"\n All stitching methods failed for {store_name}")
 
 
 def main():
