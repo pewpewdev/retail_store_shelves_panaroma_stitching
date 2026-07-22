@@ -170,7 +170,7 @@ def compute_homography(src_pts: np.ndarray,
         inliers = int(mask.sum())
         print(f"    RANSAC inliers: {inliers}/{len(src_pts)}")
     else:
-        print("    ❌ Homography estimation failed.")
+        print("    Homography estimation failed.")
         return None
 
     return H
@@ -291,7 +291,7 @@ def stitch_images_loftr(images_cv2: list,
         )
 
         if src_pts is None or n_matches < 10:
-            print(f"  ❌ Not enough matches ({n_matches}).")
+            print(f"   Not enough matches ({n_matches}).")
             return False, None
 
         # Compute homography
@@ -299,7 +299,7 @@ def stitch_images_loftr(images_cv2: list,
         H = compute_homography(src_pts, dst_pts)
 
         if H is None:
-            print(f"  ❌ Homography failed for image {i+1}.")
+            print(f"   Homography failed for image {i+1}.")
             return False, None
 
         # Warp and blend
@@ -340,10 +340,10 @@ def stitch_store(store_dir: str,
         os.makedirs(output_dir, exist_ok=True)
         out_path = os.path.join(output_dir, f"{store_name}_loftr_panorama.jpg")
         cv2.imwrite(out_path, panorama, [cv2.IMWRITE_JPEG_QUALITY, 95])
-        print(f"\n✅ Saved: {out_path}")
+        print(f"\n Saved: {out_path}")
         print(f"   Size: {panorama.shape[1]}x{panorama.shape[0]} px")
     else:
-        print(f"\n❌ Stitching failed for {store_name}")
+        print(f"\n Stitching failed for {store_name}")
 
 
 # ─────────────────────────────────────────────
@@ -400,7 +400,7 @@ def main():
     store_dirs = sorted(glob.glob(os.path.join(args.base_dir, "store_*")))
 
     if not store_dirs:
-        print("❌ No store directories found.")
+        print(" No store directories found.")
         return
 
     print(f"\nFound {len(store_dirs)} store(s): "
@@ -418,7 +418,7 @@ def main():
         )
 
     print(f"\n{'='*60}")
-    print("✅ All stores processed.")
+    print(" All stores processed.")
     print(f"   Outputs saved to: {args.output_dir}")
     print(f"{'='*60}")
 
