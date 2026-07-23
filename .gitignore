@@ -1,1 +1,2 @@
-RetailGlue/.venv/
+# Ignore everything inside the weights directory
+RetailGlue/weights/*

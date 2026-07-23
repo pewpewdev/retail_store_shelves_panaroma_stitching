@@ -7,13 +7,12 @@ from pathlib import Path
 
 
 def load_images(image_dir: str) -> tuple[list, list]:
-    """Load all jpg images from a directory."""
     extensions = ["*.jpg", "*.jpeg", "*.png"]
     image_paths = []
     for ext in extensions:
         image_paths.extend(glob.glob(os.path.join(image_dir, ext)))
     
-    image_paths = sorted(image_paths)  # consistent ordering
+    image_paths = sorted(image_paths)  
     images = []
     valid_paths = []
     
@@ -44,7 +43,7 @@ def stitch_opencv(images: list) -> tuple[bool, np.ndarray]:
         print("  cv2.Stitcher succeeded.")
         return True, panorama
     
-    # Retry with resized images (helps with memory/feature issues)
+    # Retry with resized images 
     print(f"  Stitcher failed (status={status}). Retrying with resized images...")
     resized = [cv2.resize(img, (img.shape[1] // 2, img.shape[0] // 2)) 
                for img in images]
@@ -217,7 +216,6 @@ def stitch_manual_sift(images: list) -> tuple[bool, np.ndarray]:
     Method 2: Sequential SIFT + RANSAC homography stitching.
     Stitches images one by one from left to right.
     """
-    print("\n[Method 2] Trying manual SIFT-based stitching...")
     
     if len(images) < 2:
         return False, None
@@ -245,7 +243,6 @@ def stitch_manual_sift(images: list) -> tuple[bool, np.ndarray]:
 
 
 def stitch_store(store_dir: str, output_dir: str, store_name: str):
-    """Main stitching pipeline for one store."""
     image_dir = os.path.join(store_dir, "images")
     print(f"\n{'='*60}")
     print(f"Processing: {store_name}")
@@ -291,7 +288,7 @@ def main():
     )
     args = parser.parse_args()
 
-    # Auto-discover all store_* directories
+
     store_dirs = sorted(glob.glob(os.path.join(args.base_dir, "store_*")))
 
     if not store_dirs:

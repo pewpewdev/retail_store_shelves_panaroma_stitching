@@ -196,6 +196,153 @@ class ImageStitcher:
 
         return filtered_src, filtered_tgt, rejected_src, rejected_tgt
 
+    #New changes added for RetailGlue's failures on stitching >= 2 images
+    def _crop_black_borders(self, img):
+        """Crop black borders from warped panorama."""
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if len(img.shape) == 3 else img
+        _, thresh = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+        coords = cv2.findNonZero(thresh)
+        if coords is None:
+            return img
+        x, y, w, h = cv2.boundingRect(coords)
+        return img[y:y + h, x:x + w]  
+
+    
+    
+    def _build_cameras_from_homography(self, H, img1):
+        """Convert homography to cv2.detail.CameraParams for 2 images."""
+        h, w = img1.shape[:2]
+        focal = max(h, w) * 0.7
+
+
+        K = np.array([[focal, 0, w / 2],
+                    [0, focal, h / 2],
+                    [0, 0, 1]], dtype=np.float32)
+
+
+        cam1 = cv2.detail_CameraParams()
+        cam1.focal, cam1.aspect = focal, 1.0
+        cam1.ppx, cam1.ppy = w / 2, h / 2
+        cam1.R = np.eye(3, dtype=np.float32)
+        cam1.t = np.zeros((3, 1), dtype=np.float32)
+
+
+        num, Rs, Ts, Ns = cv2.decomposeHomographyMat(H, K)
+
+
+        # FIX: pick rotation closest to identity (least tilt)
+        best_idx, min_angle = 0, float('inf')
+        for i in range(num):
+            cos_val = np.clip((np.trace(Rs[i]) - 1) / 2, -1.0, 1.0)
+            angle = abs(np.arccos(cos_val))
+            if angle < min_angle:
+                min_angle, best_idx = angle, i
+
+
+        cam2 = cv2.detail_CameraParams()
+        cam2.focal, cam2.aspect = focal, 1.0
+        cam2.ppx, cam2.ppy = w / 2, h / 2
+        cam2.R = Rs[best_idx].astype(np.float32)
+        cam2.t = Ts[best_idx].astype(np.float32)
+
+
+        return [cam1, cam2]
+
+
+    def _stitch_two_images_hybrid(self, img1, img2, src_pts, tgt_pts):
+        """Hybrid: RetailGlue matches -> cv2.detail blending."""
+        try:
+            if len(src_pts) < 10 or len(tgt_pts) < 10:
+                logger.warning(f"[Hybrid] Not enough matches: {len(src_pts)}")
+                return False, None
+
+
+            H, mask = cv2.findHomography(
+                np.asarray(src_pts, dtype=np.float32).reshape(-1, 1, 2),
+                np.asarray(tgt_pts, dtype=np.float32).reshape(-1, 1, 2),
+                cv2.USAC_MAGSAC, ransacReprojThreshold=5.0,
+                confidence=0.995, maxIters=5000)
+
+
+            if H is None:
+                logger.warning("[Hybrid] Homography failed")
+                return False, None
+
+
+            inliers = int(mask.sum()) if mask is not None else 0
+            logger.info(f"[Hybrid] inliers: {inliers}/{len(src_pts)}")
+            if inliers < 10:
+                return False, None
+
+
+            cameras = self._build_cameras_from_homography(H, img1)
+
+
+            # Wave correction (fixes tilt)
+            rmats = [np.copy(c.R) for c in cameras]
+            cv2.detail.waveCorrect(rmats, cv2.detail.WAVE_CORRECT_HORIZ)
+            for c, r in zip(cameras, rmats):
+                c.R = r
+
+
+            focal = cameras[0].focal
+            warper = cv2.PyRotationWarper("plane", focal)
+
+
+            corners, sizes, wimgs, wmasks = [], [], [], []
+            for img, cam in zip([img1, img2], cameras):
+                K = cam.K().astype(np.float32)
+                R = cam.R.astype(np.float32)
+                corner, warped = warper.warp(img, K, R,
+                                            cv2.INTER_LINEAR, cv2.BORDER_REFLECT)
+                corners.append(corner)
+                sizes.append((warped.shape[1], warped.shape[0]))
+                wimgs.append(warped)
+                m = 255 * np.ones(img.shape[:2], np.uint8)
+                _, wm = warper.warp(m, K, R, cv2.INTER_NEAREST, cv2.BORDER_CONSTANT)
+                wmasks.append(wm)
+
+
+            # Exposure compensation
+            comp = cv2.detail.ExposureCompensator_createDefault(
+                cv2.detail.ExposureCompensator_GAIN)
+            comp.feed(corners, wimgs, wmasks)
+            for i, (im, wm) in enumerate(zip(wimgs, wmasks)):
+                comp.apply(i, corners[i], im, wm)
+
+
+            # MultiBand blending
+            blender = cv2.detail_MultiBandBlender()
+            blender.prepare(corners, sizes)
+            for im, wm, cr in zip(wimgs, wmasks, corners):
+                blender.feed(im.astype(np.int16), wm, cr)
+            result, _ = blender.blend(None, None)
+            result = np.clip(result, 0, 255).astype(np.uint8)
+
+
+            logger.info("[Hybrid] cv2.detail blending done")
+            return True, result
+
+
+        except Exception as e:
+            logger.warning(f"[Hybrid] exception: {e}")
+            return False, None
+
+
+    def _stitch_opencv_fallback(self, images):
+        """Fallback: cv2.Stitcher (for 2-image failure)."""
+        try:
+            stitcher = cv2.Stitcher.create(cv2.Stitcher_PANORAMA)
+            status, pano = stitcher.stitch(images)
+            if status == cv2.Stitcher_OK:
+                logger.info("[Fallback] cv2.Stitcher succeeded")
+                return True, pano
+            logger.warning(f"[Fallback] cv2.Stitcher failed (status={status})")
+        except Exception as e:
+            logger.warning(f"[Fallback] cv2.Stitcher exception: {e}")
+        return False, None
+
+
     @track_runtime()
     def _calculate_homography_matrix(self, source_points, target_points, source_image_shape):
         if len(source_points) < 4 or len(target_points) < 4:
@@ -208,7 +355,8 @@ class ImageStitcher:
                 logger.warning(msgs)
             return None
         return H
-    
+
+    #New Changes added to implement Progressive RANSAC
     @track_runtime()
     def _calculate_homography_with_progressive_ransac(
             self, im1, im2, src_pts, tgt_pts):
@@ -532,8 +680,11 @@ class ImageStitcher:
                             min_bins_with_points=self.y_distribution_min_bins):
                         continue
 
-                # H = self._calculate_homography_matrix(src_pts, tgt_pts, im1.image.shape)
-                H = self._calculate_homography_with_progressive_ransac(im1, im2, src_pts, tgt_pts)
+                #For single RANSAC (Native)        
+                H = self._calculate_homography_matrix(src_pts, tgt_pts, im1.image.shape)
+
+                #For Progressive RANSAC
+                #H = self._calculate_homography_with_progressive_ransac(im1, im2, src_pts, tgt_pts)
                 if H is not None:
                     if self.verbose:
                         logger.info(f"Image {im1.idx} and {im2.idx} have enough matching points. {len(src_pts)} vs {len(tgt_pts)}")
@@ -641,6 +792,57 @@ class ImageStitcher:
         input_graph = self._calculate_graph(
             images,
             detections=detections if has_dets else None)
+
+        #New changes added on RetailGlue's failure on stitching =< 2 images
+        if len(images) == 2:
+            im0, im1 = images[0], images[1]
+            src_pts = im0.source_points.get(
+                im1.idx, np.zeros((0, 2), dtype=np.float32))
+            tgt_pts = im0.target_points.get(
+                im1.idx, np.zeros((0, 2), dtype=np.float32))
+
+
+            # 1. Hybrid: RetailGlue matches + cv2.detail blending
+            ok, pano = self._stitch_two_images_hybrid(
+                im0.image, im1.image, src_pts, tgt_pts)
+
+
+            # 2. Fallback: cv2.Stitcher
+            if not ok:
+                logger.warning("[Hybrid] failed -> trying cv2.Stitcher fallback")
+                ok, pano = self._stitch_opencv_fallback([im0.image, im1.image])
+
+
+            if ok and pano is not None:
+                pano = self._crop_black_borders(pano)   # FIX: crop borders
+
+
+                # Record panorama bookkeeping (consistency with normal path)
+                self.straightening_matrices = {0: None}
+                self.panorama_image_indices = {0: [im0.idx, im1.idx]}
+                self.panorama_original_indices = {
+                    0: [self.kept_indices[im0.idx], self.kept_indices[im1.idx]]}
+                self.panorama_center_image_ids = {0: im0.idx}
+                self.panorama_translation_matrices = {0: np.eye(3, dtype=np.float32)}
+                self.panorama_patch_scales = {0: 1.0}
+
+
+                self._log_runtime_summary()
+
+
+                # NOTE: detections[0] coords are in ORIGINAL frame, NOT warped pano.
+                #       Downstream F1 eval on hybrid path will be approximate.
+                if has_dets:
+                    if self.verbose:
+                        return [pano], [detections[0]], [None, None, None]
+                    return [pano], [detections[0]]
+                return ([pano], [None, None, None]) if self.verbose else [pano]
+
+
+            # Both hybrid + cv2.Stitcher failed -> fall through to graph pipeline
+            logger.warning("[Hybrid+Fallback] failed -> using existing pipeline")
+        
+        
         filtered_graph = self._frame_eliminator(input_graph.copy(), images)
 
         viz_graph = visualize_graph(input_graph, 'Input Graph') if self.verbose else None

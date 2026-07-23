@@ -1,21 +1,16 @@
 # progressive_ransac.py
 # ---------------------------------------------------------------
+#Author : Prerana Bora
 # Progressive RANSAC for product-level retail stitching.
 # Adapted from Jia et al. 2024, "Semantic Aware Stitching for
 # Panorama", Sensors 24(11):3512, Section 2.1.2.
 #
-# ADAPTATION (this work):
+# ADAPTATION according to RetailGlue:
 #   - operates on PRODUCT CENTROIDS (YOLO bbox centers)
 #   - adds DINOv3 embedding-similarity + LightGlue-confidence filters
 #   - groups planes by REPROJECTION ERROR to the estimated similarity
 #     (not by centroid proximity)
 #   - resolution-independent thresholds via coordinate normalization
-#
-# NOTE (honest scope): this reduces geometrically inconsistent
-# correspondences (including those from visually repetitive products);
-# it does NOT explicitly detect/model repeated SKUs.
-#
-# Rule-based / no training required.
 # ---------------------------------------------------------------
 
 from dataclasses import dataclass, field
@@ -24,31 +19,24 @@ import numpy as np
 import cv2
 
 
-# ---------------------------------------------------------------
-# Tunable constants
-# ---------------------------------------------------------------
-MIN_POINTS      = 3        # similarity needs >=2; use 3 for stability
+MIN_POINTS      = 3        # similarity needs >=2
 MAX_ITERS       = 5000
 CONFIDENCE      = 0.999
-REPROJ_INLIER   = 0.02     # normalized-coord reproj threshold for plane membership
+REPROJ_INLIER   = 0.02     # normalized-coord reproj threshold 
 
 
-# ---------------------------------------------------------------
 # Data type for a product-level correspondence
-# ---------------------------------------------------------------
 @dataclass
 class ProductMatch:
     centroid_A: np.ndarray            # (x, y) YOLO bbox center, image A
     centroid_B: np.ndarray            # (x, y) YOLO bbox center, image B
     embedding_sim: float              # DINOv3 cosine similarity (0..1)
     lightglue_score: float = 1.0      # LightGlue match confidence (0..1)
-    bbox_A: Optional[np.ndarray] = None   # [x1,y1,x2,y2] image A (optional)
-    bbox_B: Optional[np.ndarray] = None   # [x1,y1,x2,y2] image B (optional)
+    bbox_A: Optional[np.ndarray] = None   
+    bbox_B: Optional[np.ndarray] = None   
 
 
-# ---------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------
+
 def _pts(matches):
     A = np.array([np.asarray(m.centroid_A, np.float32) for m in matches],
                  dtype=np.float32)
@@ -108,16 +96,16 @@ def ransac_similarity_norm(matches, w, h, threshold=0.02):
     return S, mask.ravel().astype(bool)
 
 
-# ---------------------------------------------------------------
-# Main: Progressive RANSAC (Jia et al. 2024, Section 2.1.2)
-# ---------------------------------------------------------------
+
+# Progressive RANSAC (Jia et al. 2024, Section 2.1.2)
+
 def progressive_ransac(matches: List[ProductMatch],
                        image_size,                    # (width, height)
                        lenient_thresh: float = 0.05,  # Jia Step 1 (normalized)
                        strict_thresh: float = 0.02,   # Jia Step 2 (normalized)
                        min_inlier_ratio: float = 0.30,# Jia Step 4 (stop)
-                       emb_sim_thresh: Optional[float] = None,   # Change #3
-                       lg_score_thresh: Optional[float] = None   # Change #4
+                       emb_sim_thresh: Optional[float] = None,   
+                       lg_score_thresh: Optional[float] = None   
                        ) -> List[Dict]:
     """
     Groups product correspondences by shelf plane, returning a similarity
@@ -140,7 +128,7 @@ def progressive_ransac(matches: List[ProductMatch],
     if total < MIN_POINTS:
         return []
 
-    # ---- Filters (optional; enable for ablations) ----
+
     if emb_sim_thresh is not None:
         matches = [m for m in matches if m.embedding_sim >= emb_sim_thresh]
     if lg_score_thresh is not None:
@@ -148,7 +136,7 @@ def progressive_ransac(matches: List[ProductMatch],
     if len(matches) < MIN_POINTS:
         return []
 
-    # ---- Jia Step 1: lenient RANSAC removes gross outliers ----
+    # Step 1: lenient RANSAC removes gross outliers 
     S0, mask0 = ransac_similarity_norm(matches, w, h, lenient_thresh)
     if S0 is not None and mask0 is not None:
         matches = [m for m, keep in zip(matches, mask0) if keep]
@@ -158,23 +146,22 @@ def progressive_ransac(matches: List[ProductMatch],
     plane_groups = []
     remaining = matches
 
-    # ---- Jia Step 4: iterate until inlier ratio < min_inlier_ratio ----
+    # Step 4: iterate until inlier ratio < min_inlier_ratio 
     while inlier_ratio(remaining, total) >= min_inlier_ratio:
 
-        # ---- Jia Step 2: strict RANSAC -> one plane's similarity ----
+        # Step 2: strict RANSAC 
         S, mask = ransac_similarity_norm(remaining, w, h, strict_thresh)
         if S is None or mask is None or mask.sum() < MIN_POINTS:
             break
 
         inliers = [m for m, keep in zip(remaining, mask) if keep]
 
-        # ---- reprojection error of this plane's inliers ----
         A, B = _pts(inliers)
         An, Bn = _normalize(A, w, h), _normalize(B, w, h)
         errs = _reproj_errors(S, An, Bn)
         mean_error = float(errs.mean())
 
-        # ---- plane quality score (Change #5) ----
+        # plane quality score 
         mean_emb = float(np.mean([m.embedding_sim for m in inliers]))
         score = (len(inliers) * mean_emb) / (mean_error + 1e-6)
 
@@ -183,23 +170,23 @@ def progressive_ransac(matches: List[ProductMatch],
         plane_groups.append({
             "inliers": inliers,
             "center": center,
-            "S": S,                     # similarity (Eq. 9), normalized coords
-            "score": score,             # Change #5: quality-weighted
-            "mean_error": mean_error,   # Change #4/#7: metric returned
+            "S": S,                     
+            "score": score,             
+            "mean_error": mean_error,   
             "n_inliers": len(inliers),
         })
 
-        # ---- Change #2: remove points by REPROJECTION ERROR, not distance ----
+        # remove points by REPROJECTION ERROR, not distance
         Ar, Br = _pts(remaining)
         Arn, Brn = _normalize(Ar, w, h), _normalize(Br, w, h)
         rem_errs = _reproj_errors(S, Arn, Brn)
         remaining = [m for m, e in zip(remaining, rem_errs)
-                     if e > REPROJ_INLIER]   # keep only points NOT on this plane
+                     if e > REPROJ_INLIER]   
 
         if len(remaining) < MIN_POINTS:
             break
 
-    # ---- Change #5/#7: return sorted by quality, best plane first ----
+    # return sorted by quality, best plane first
     plane_groups.sort(key=lambda g: g["score"], reverse=True)
     return plane_groups
 

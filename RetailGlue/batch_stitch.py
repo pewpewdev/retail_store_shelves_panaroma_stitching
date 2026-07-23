@@ -1,30 +1,4 @@
-"""
-Batch-run RetailGlue over a folder of stores and save the stitched
-panorama(s) for each store into <store>/result/.
 
-Expected input layout (exactly what you have):
-
-    stitching_assignment_data/
-        store_1/images/*.jpg
-        store_2/images/*.jpg
-        ...
-
-Produces:
-
-    stitching_assignment_data/
-        store_1/result/panorama_0.jpg
-        store_2/result/panorama_0.jpg
-        ...
-
-Run from inside the cloned RetailGlue repo (so `retailglue` is importable
-and `weights/` is resolvable), e.g.:
-
-    cd RetailGlue
-    uv run python batch_stitch.py \
-        --data_root /Users/testuser/Desktop/store_panaroma_stiching/stitching_assignment_data \
-        --model_name lightglue_dinov3_vits \
-        --device mps
-"""
 import argparse
 import copy
 import glob
@@ -106,7 +80,7 @@ def stitch_store(store_dir, config, detector, stitcher, device, model_name):
     if not isinstance(panoramas, list):
         panoramas = [panoramas]
 
-    result_dir = os.path.join(store_dir, "result_new")
+    result_dir = os.path.join(store_dir, "result")
     os.makedirs(result_dir, exist_ok=True)
     for i, pano in enumerate(panoramas):
         out_path = os.path.join(result_dir, f"panorama_{i}.jpg")

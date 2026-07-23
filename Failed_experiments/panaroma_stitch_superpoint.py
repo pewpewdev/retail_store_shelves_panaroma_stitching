@@ -9,18 +9,14 @@ from lightglue import LightGlue, SuperPoint
 from lightglue.utils import load_image, rbd
 
 
-# ─────────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────────
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {DEVICE}")
 
 
-# ─────────────────────────────────────────────
-# MODELS
-# ─────────────────────────────────────────────
+
 def load_models():
-    """Load SuperPoint extractor + LightGlue matcher."""
+    #SuperPoint extractor + LightGlue matcher
     print("Loading SuperPoint + LightGlue models...")
     extractor = SuperPoint(max_num_keypoints=4096).eval().to(DEVICE)
     matcher = LightGlue(features="superpoint").eval().to(DEVICE)
@@ -28,11 +24,7 @@ def load_models():
     return extractor, matcher
 
 
-# ─────────────────────────────────────────────
-# IMAGE LOADING
-# ─────────────────────────────────────────────
 def load_images_cv2(image_dir: str):
-    """Load images using OpenCV for warping/blending."""
     extensions = ["*.jpg", "*.jpeg", "*.png"]
     paths = []
     for ext in extensions:
@@ -61,9 +53,8 @@ def cv2_to_lightglue_tensor(img_bgr: np.ndarray) -> torch.Tensor:
     return tensor.to(DEVICE)
 
 
-# ─────────────────────────────────────────────
+
 # FEATURE EXTRACTION & MATCHING
-# ─────────────────────────────────────────────
 def extract_features(extractor, img_tensor: torch.Tensor) -> dict:
     """Extract SuperPoint features from a single image tensor."""
     with torch.no_grad():
@@ -106,9 +97,7 @@ def get_matched_keypoints(feats0, feats1, matches_dict):
     return src_pts, dst_pts, len(matched_indices)
 
 
-# ─────────────────────────────────────────────
 # HOMOGRAPHY
-# ─────────────────────────────────────────────
 def compute_homography_from_pts(src_pts: np.ndarray,
                                  dst_pts: np.ndarray) -> np.ndarray:
     """Compute homography using RANSAC from matched point pairs."""
@@ -132,9 +121,7 @@ def compute_homography_from_pts(src_pts: np.ndarray,
     return H
 
 
-# ─────────────────────────────────────────────
 # WARPING & BLENDING
-# ─────────────────────────────────────────────
 def warp_and_blend(img_src: np.ndarray,
                    img_dst: np.ndarray,
                    H: np.ndarray) -> np.ndarray:
@@ -181,7 +168,7 @@ def warp_and_blend(img_src: np.ndarray,
     mask_src = (cv2.cvtColor(warped_src, cv2.COLOR_BGR2GRAY) > 0).astype(np.float32)
     mask_dst = (cv2.cvtColor(canvas_dst, cv2.COLOR_BGR2GRAY) > 0).astype(np.float32)
 
-    overlap = mask_src * mask_dst  # 1 where both images exist
+    overlap = mask_src * mask_dst  
 
     # ── Alpha blend in overlap, hard copy elsewhere ──
     # Horizontal gradient alpha in overlap zone
@@ -219,9 +206,7 @@ def crop_black_borders(img: np.ndarray) -> np.ndarray:
     return img[y: y + h, x: x + w]
 
 
-# ─────────────────────────────────────────────
-# MAIN STITCHING PIPELINE
-# ─────────────────────────────────────────────
+
 def stitch_images_superpoint(images_cv2: list,
                               extractor,
                               matcher) -> tuple[bool, np.ndarray]:
@@ -281,7 +266,7 @@ def stitch_images_superpoint(images_cv2: list,
 
 def stitch_store(store_dir: str, output_dir: str,
                   store_name: str, extractor, matcher):
-    """Full pipeline for one store."""
+
     image_dir = os.path.join(store_dir, "images")
     print(f"\n{'='*60}")
     print(f"Store: {store_name}")

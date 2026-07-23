@@ -8,19 +8,15 @@ import kornia
 from kornia.feature import LoFTR
 
 
-# ─────────────────────────────────────────────
-# CONFIG
-# ─────────────────────────────────────────────
+
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {DEVICE}")
 
-# LoFTR works best at this resolution
+
 LOFTR_IMAGE_SIZE = (480, 640)  # (H, W)
 
 
-# ─────────────────────────────────────────────
-# MODEL
-# ─────────────────────────────────────────────
+#Model
 def load_model(weights: str = "indoor") -> LoFTR:
     """
     Load pretrained LoFTR model.
@@ -34,9 +30,7 @@ def load_model(weights: str = "indoor") -> LoFTR:
     return model
 
 
-# ─────────────────────────────────────────────
-# IMAGE LOADING
-# ─────────────────────────────────────────────
+
 def load_images_cv2(image_dir: str):
     """Load images using OpenCV."""
     extensions = ["*.jpg", "*.jpeg", "*.png"]
@@ -88,9 +82,8 @@ def cv2_to_loftr_tensor(img_bgr: np.ndarray,
     return tensor, (scale_x, scale_y)
 
 
-# ─────────────────────────────────────────────
+
 # FEATURE MATCHING WITH LoFTR
-# ─────────────────────────────────────────────
 def match_loftr(model: LoFTR,
                 img0_bgr: np.ndarray,
                 img1_bgr: np.ndarray,
@@ -149,9 +142,8 @@ def match_loftr(model: LoFTR,
     return kpts0, kpts1, len(kpts0)
 
 
-# ─────────────────────────────────────────────
+
 # HOMOGRAPHY
-# ─────────────────────────────────────────────
 def compute_homography(src_pts: np.ndarray,
                         dst_pts: np.ndarray) -> np.ndarray:
     """Compute homography using RANSAC."""
@@ -170,15 +162,14 @@ def compute_homography(src_pts: np.ndarray,
         inliers = int(mask.sum())
         print(f"    RANSAC inliers: {inliers}/{len(src_pts)}")
     else:
-        print("    Homography estimation failed.")
+        print("     Homography estimation failed.")
         return None
 
     return H
 
 
-# ─────────────────────────────────────────────
+
 # WARPING & BLENDING
-# ─────────────────────────────────────────────
 def warp_and_blend(img_src: np.ndarray,
                    img_dst: np.ndarray,
                    H: np.ndarray) -> np.ndarray:
@@ -261,9 +252,7 @@ def crop_black_borders(img: np.ndarray) -> np.ndarray:
     return img[y: y + h, x: x + w]
 
 
-# ─────────────────────────────────────────────
-# MAIN STITCHING PIPELINE
-# ─────────────────────────────────────────────
+
 def stitch_images_loftr(images_cv2: list,
                          model: LoFTR,
                          confidence_threshold: float = 0.5) -> tuple:
@@ -292,6 +281,7 @@ def stitch_images_loftr(images_cv2: list,
 
         if src_pts is None or n_matches < 10:
             print(f"   Not enough matches ({n_matches}).")
+            print(f"   Not enough matches ({n_matches}).")
             return False, None
 
         # Compute homography
@@ -299,6 +289,7 @@ def stitch_images_loftr(images_cv2: list,
         H = compute_homography(src_pts, dst_pts)
 
         if H is None:
+            print(f"   Homography failed for image {i+1}.")
             print(f"   Homography failed for image {i+1}.")
             return False, None
 
@@ -311,9 +302,7 @@ def stitch_images_loftr(images_cv2: list,
     return True, panorama
 
 
-# ─────────────────────────────────────────────
-# STORE PIPELINE
-# ─────────────────────────────────────────────
+
 def stitch_store(store_dir: str,
                   output_dir: str,
                   store_name: str,
@@ -341,14 +330,13 @@ def stitch_store(store_dir: str,
         out_path = os.path.join(output_dir, f"{store_name}_loftr_panorama.jpg")
         cv2.imwrite(out_path, panorama, [cv2.IMWRITE_JPEG_QUALITY, 95])
         print(f"\n Saved: {out_path}")
+        print(f"\n Saved: {out_path}")
         print(f"   Size: {panorama.shape[1]}x{panorama.shape[0]} px")
     else:
         print(f"\n Stitching failed for {store_name}")
+        print(f"\n Stitching failed for {store_name}")
 
 
-# ─────────────────────────────────────────────
-# ENTRY POINT
-# ─────────────────────────────────────────────
 
 def main():
     parser = argparse.ArgumentParser(description="LoFTR Panorama Stitcher")
@@ -388,18 +376,19 @@ def main():
     )
     args = parser.parse_args()
 
-    # Override global LoFTR size if provided
+
     global LOFTR_IMAGE_SIZE
     LOFTR_IMAGE_SIZE = (args.loftr_height, args.loftr_width)
     print(f"LoFTR input size: {LOFTR_IMAGE_SIZE}")
 
-    # Load model ONCE — reuse across all stores
+
     model = load_model(weights=args.weights)
 
-    # Auto-discover store directories
+
     store_dirs = sorted(glob.glob(os.path.join(args.base_dir, "store_*")))
 
     if not store_dirs:
+        print(" No store directories found.")
         print(" No store directories found.")
         return
 
@@ -418,6 +407,7 @@ def main():
         )
 
     print(f"\n{'='*60}")
+    print(" All stores processed.")
     print(" All stores processed.")
     print(f"   Outputs saved to: {args.output_dir}")
     print(f"{'='*60}")
