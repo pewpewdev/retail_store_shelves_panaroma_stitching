@@ -80,7 +80,7 @@ def stitch_store(store_dir, config, detector, stitcher, device, model_name):
     if not isinstance(panoramas, list):
         panoramas = [panoramas]
 
-    result_dir = os.path.join(store_dir, "result")
+    result_dir = os.path.join(store_dir, "result_new")
     os.makedirs(result_dir, exist_ok=True)
     for i, pano in enumerate(panoramas):
         out_path = os.path.join(result_dir, f"panorama_{i}.jpg")

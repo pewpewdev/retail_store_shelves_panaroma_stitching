@@ -1,2 +1,2 @@
 # Ignore everything inside the weights directory
-RetailGlue/weights/*
+RetailGlue/weights/*.DS_Store
